@@ -615,6 +615,7 @@ def phase1(S, insights, pass_mark):
         st.caption("The workbook signal is a suspected learning gap. Only a teacher can verify or revise it.")
         existing = D[D["roll"] == r["roll"]].tail(1)
         current = existing.iloc[0] if len(existing) else None
+        current_status = current.get("verification_status", "Not reviewed") if current is not None else "Not reviewed"
         with st.form(f"diagnostic_form_{r['roll']}"):
             dc1, dc2 = st.columns(2)
             with dc1:
@@ -623,20 +624,24 @@ def phase1(S, insights, pass_mark):
                     "Verification status",
                     ["Not reviewed", "Teacher verified", "Teacher revised", "Not observed"],
                     index=["Not reviewed", "Teacher verified", "Teacher revised", "Not observed"].index(
-                        current["verification_status"] if current is not None and current["verification_status"] in
+                        current_status if current_status in
                         ["Not reviewed", "Teacher verified", "Teacher revised", "Not observed"] else "Not reviewed"),
                 )
-                verified_gap = st.text_input("Teacher-verified weakness / need",
-                                              "" if current is None else str(current["verified_gap"]))
+                verified_gap = st.text_input(
+                    "Teacher-verified weakness / need",
+                    "" if current is None else str(current.get("verified_gap", "")),
+                )
             with dc2:
-                verified_by = st.text_input("Verified by", "" if current is None else str(current["verified_by"]))
+                verified_by = st.text_input("Verified by", "" if current is None else str(current.get("verified_by", "")))
                 verified_date = st.date_input(
                     "Verification date",
-                    date.today() if current is None or pd.isna(current["verified_date"])
-                    else current["verified_date"].date(),
+                    date.today() if current is None or pd.isna(current.get("verified_date", pd.NaT))
+                    else current.get("verified_date").date(),
                 )
-                diagnostic_notes = st.text_area("Observation notes",
-                                                "" if current is None else str(current["notes"]))
+                diagnostic_notes = st.text_area(
+                    "Observation notes",
+                    "" if current is None else str(current.get("notes", "")),
+                )
             save_diagnostic = st.form_submit_button("Save diagnostic review", type="primary")
         if save_diagnostic:
             row = pd.DataFrame([{
@@ -1087,6 +1092,7 @@ def phase2(S):
             student = S[S["label"] == report_sel].iloc[0]
             progress = P[P["roll"] == student["roll"]].iloc[0]
             diagnostic = D[D["roll"] == student["roll"]].tail(1)
+            diagnostic_record = diagnostic.iloc[0] if len(diagnostic) else None
             student_weekly = with_pct(W[W["roll"] == student["roll"]]) if len(W) else pd.DataFrame()
             report_rows = [
                 ("Student", student["name"]),
@@ -1101,8 +1107,10 @@ def phase2(S):
                  else "Not set"),
                 ("Latest progress", pct(progress["latest"], 1)),
                 ("Change from baseline", pct(progress["change"], 1)),
-                ("Diagnostic verification", diagnostic.iloc[0]["verification_status"] if len(diagnostic) else "Not reviewed"),
-                ("Teacher-verified weakness", diagnostic.iloc[0]["verified_gap"] if len(diagnostic) else ""),
+                ("Diagnostic verification", diagnostic_record.get("verification_status", "Not reviewed")
+                 if diagnostic_record is not None else "Not reviewed"),
+                ("Teacher-verified weakness", diagnostic_record.get("verified_gap", "")
+                 if diagnostic_record is not None else ""),
             ]
             report = pd.DataFrame(report_rows, columns=["Measure", "Value"])
             show_df(report, hide_index=True)
