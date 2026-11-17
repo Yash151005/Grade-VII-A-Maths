@@ -182,6 +182,10 @@ def card(title, text, color="#2563eb"):
     )
 
 
+def chart_note(text):
+    st.caption(f"**What this means:** {text}")
+
+
 def show_df(df, **kw):
     """st.dataframe stretched to full width, tolerant of Streamlit version differences."""
     try:
@@ -486,11 +490,20 @@ def phase1(S, insights, pass_mark):
     passed = int((C["pct"] >= pass_mark - 1e-9).sum())
 
     D = load_table("diagnostics")
-    t1, t2, t3, t4, t5 = st.tabs(["📊 Overview", "🧑‍🎓 Student Profiles", "🎯 Personalized Plans",
-                                  "💡 Class Insights", "📋 Data Table"])
+    t1, t2, t3, t4, t5 = st.tabs(["🏠 Home – Class Overview", "🧑‍🎓 Student Performance",
+                                  "🎯 Learning Improvement Plan", "🔎 Areas for Improvement",
+                                  "📄 Reports & Downloads"])
 
     # ---------- Class analysis ----------
     with t1:
+        st.markdown("#### Existing marks and results")
+        st.caption("This section shows the class's current Assessment-I results. Future progress is tracked separately.")
+        st.markdown(
+            '<span style="color:#16a34a;font-weight:600">● Doing well</span>&nbsp;&nbsp;'
+            '<span style="color:#d97706;font-weight:600">● Needs practice</span>&nbsp;&nbsp;'
+            '<span style="color:#dc2626;font-weight:600">● Needs immediate support</span>',
+            unsafe_allow_html=True,
+        )
         c = st.columns(6)
         with c[0]: kpi("Class strength", n_all, f"{n_c} complete /70 results")
         with c[1]: kpi("Class average", pct(C["pct"].mean()), f"{C['total'].mean():.1f} / 70 · median {C['total'].median():.0f}")
@@ -503,11 +516,12 @@ def phase1(S, insights, pass_mark):
         a, b = st.columns(2)
         with a:
             cnt = S.groupby("short").size().reindex(BAND_ORDER_ALL).dropna().reset_index()
-            cnt.columns = ["Band", "Students"]
-            fig = px.bar(cnt, x="Band", y="Students", color="Band", color_discrete_map=BAND_COLOR,
+            cnt.columns = ["Marks category", "Students"]
+            fig = px.bar(cnt, x="Marks category", y="Students", color="Marks category", color_discrete_map=BAND_COLOR,
                          text="Students", title="Students by performance band")
             fig.update_layout(showlegend=False, xaxis_title=None)
             show_fig(fig)
+            chart_note("This groups students by their current marks category. Green means students are doing well; amber means they need practice; red means they need immediate support.")
         with b:
             idx = np.floor(C["pct"].round(6) / 10).clip(0, 10).astype(int)
             labels = ["0–9%", "10–19%", "20–29%", "30–39%", "40–49%", "50–59%", "60–69%", "70–79%",
@@ -518,6 +532,7 @@ def phase1(S, insights, pass_mark):
             fig.add_vrect(x0=-0.5, x1=pass_mark / 10 - 0.5, fillcolor="#fecaca", opacity=0.35, line_width=0,
                           annotation_text="below pass mark", annotation_position="top left")
             show_fig(fig)
+            chart_note("This shows how many students fall into each marks range. The shaded area is below the pass mark.")
 
         a, b = st.columns(2)
         with a:
@@ -530,13 +545,15 @@ def phase1(S, insights, pass_mark):
                          title="The format gap: written paper vs cycle test")
             fig.update_layout(showlegend=False, xaxis_title=None, yaxis_range=[0, 105])
             show_fig(fig)
+            chart_note("This compares average marks in the written paper, cycle test, and total result.")
         with b:
             fig = px.scatter(C, x="written_pct", y="cycle_pct", color="short", color_discrete_map=BAND_COLOR,
                              hover_name="name", size=C["marks_lost"].clip(lower=3),
-                             labels={"written_pct": "Written %", "cycle_pct": "Cycle test %", "short": "Band"},
+                             labels={"written_pct": "Written %", "cycle_pct": "Cycle test %", "short": "Marks category"},
                              title="Written vs cycle test (below the line = written lags)")
             fig.add_shape(type="line", x0=0, y0=0, x1=100, y1=100, line=dict(dash="dash", color="#9ca3af"))
             show_fig(fig)
+            chart_note("A point below the diagonal means the student's cycle-test marks are lower than their written-paper marks.")
 
         a, b = st.columns([3, 2])
         with a:
@@ -608,11 +625,11 @@ def phase1(S, insights, pass_mark):
             show_fig(fig, height=340)
         with b:
             card("Score snapshot", r["snapshot"], r["color"])
-            card("Diagnostic signal", r["diagnostic"], "#2563eb")
+            card("Learning need", r["diagnostic"], "#2563eb")
             card("Format pattern insight", r["format_insight"], "#0891b2")
 
-        st.markdown("#### Diagnostic verification")
-        st.caption("The workbook signal is a suspected learning gap. Only a teacher can verify or revise it.")
+        st.markdown("#### Confirm learning need")
+        st.caption("The workbook suggestion is a starting point. A teacher can confirm or revise it after observing the student.")
         existing = D[D["roll"] == r["roll"]].tail(1)
         current = existing.iloc[0] if len(existing) else None
         current_status = current.get("verification_status", "Not reviewed") if current is not None else "Not reviewed"
@@ -621,14 +638,14 @@ def phase1(S, insights, pass_mark):
             with dc1:
                 st.text_area("Suspected gap (from workbook)", str(r["diagnostic"]), disabled=True)
                 verification = st.selectbox(
-                    "Verification status",
+                    "Learning need status",
                     ["Not reviewed", "Teacher verified", "Teacher revised", "Not observed"],
                     index=["Not reviewed", "Teacher verified", "Teacher revised", "Not observed"].index(
                         current_status if current_status in
                         ["Not reviewed", "Teacher verified", "Teacher revised", "Not observed"] else "Not reviewed"),
                 )
                 verified_gap = st.text_input(
-                    "Teacher-verified weakness / need",
+                    "Teacher-confirmed weakness / need",
                     "" if current is None else str(current.get("verified_gap", "")),
                 )
             with dc2:
@@ -639,10 +656,10 @@ def phase1(S, insights, pass_mark):
                     else current.get("verified_date").date(),
                 )
                 diagnostic_notes = st.text_area(
-                    "Observation notes",
+                    "Teacher notes",
                     "" if current is None else str(current.get("notes", "")),
                 )
-            save_diagnostic = st.form_submit_button("Save diagnostic review", type="primary")
+            save_diagnostic = st.form_submit_button("Save learning-need review", type="primary")
         if save_diagnostic:
             row = pd.DataFrame([{
                 "roll": r["roll"], "verification_status": verification, "verified_gap": verified_gap,
@@ -650,7 +667,7 @@ def phase1(S, insights, pass_mark):
                 "notes": diagnostic_notes,
             }])
             save_table("diagnostics", pd.concat([D[D["roll"] != r["roll"]], row], ignore_index=True))
-            st.success("Diagnostic review saved.")
+            st.success("Learning-need review saved.")
             st.rerun()
 
         st.markdown("#### 🧭 Personalized learning path")
@@ -665,7 +682,7 @@ def phase1(S, insights, pass_mark):
 
     # ---------- Learning activities ----------
     with t3:
-        st.markdown("Each band maps to one improvement activity and one **measurable evidence** rule — "
+        st.markdown("Each marks category maps to one improvement activity and one **measurable evidence** rule — "
                     "these feed the Phase 2 tracker.")
         rows = []
         for band in BAND_ORDER_ALL:
@@ -673,7 +690,7 @@ def phase1(S, insights, pass_mark):
             if g.empty:
                 continue
             a = ACT[band]
-            rows.append({"Band": band, "Students": len(g), "Priority": g["priority"].iloc[0],
+            rows.append({"Marks category": band, "Students": len(g), "Priority": g["priority"].iloc[0],
                          "Improvement activity": a["activity"], "Support format": a["fmt"],
                          "Frequency": a["freq"], "Evidence of progress": a["metric"]})
         show_df(pd.DataFrame(rows), hide_index=True)
@@ -688,7 +705,7 @@ def phase1(S, insights, pass_mark):
                                      for x in g.rename(columns={"name": "name_", "roll": "roll_"}).itertuples()),
                             unsafe_allow_html=True)
 
-        st.markdown("#### 🤝 Suggested peer-explainer pairs")
+        st.markdown("#### 🤝 Suggested peer-learning pairs")
         top = S[S["short"].isin(["Mastery", "Near-Mastery"])].sort_values("pct", ascending=False)
         low = S[S["short"].isin(["Developing", "Foundational Cracks"])].sort_values("pct")
         pairs = [{"Peer explainer": t["name"], "Explainer band": t["short"], "Learner": l["name"], "Learner band": l["short"]}
@@ -700,7 +717,7 @@ def phase1(S, insights, pass_mark):
         plan = S[["roll", "name", "short", "priority", "need", "activity", "addon", "target_pct"]].rename(columns={
             "short": "band", "need": "learning_need", "activity": "improvement_activity",
             "addon": "format_addon", "target_pct": "target_%"})
-        st.download_button("⬇️ Download class action plan (CSV)", plan.to_csv(index=False).encode("utf-8"),
+        st.download_button("⬇️ Download learning improvement plan (CSV)", plan.to_csv(index=False).encode("utf-8"),
                            "class_action_plan.csv", "text/csv")
 
     # ---------- Insights ----------
@@ -710,12 +727,12 @@ def phase1(S, insights, pass_mark):
                 with st.expander(head, expanded=head.startswith(("1.", "2."))):
                     st.write(body)
         else:
-            st.info("The 'Class Patterns & Insights' sheet was not found in the workbook.")
+            st.info("No additional class improvement notes were found in the workbook.")
 
     # ---------- Data table ----------
     with t5:
         f1, f2 = st.columns(2)
-        bands = f1.multiselect("Filter by band", BAND_ORDER_ALL, default=[])
+        bands = f1.multiselect("Filter by marks category", BAND_ORDER_ALL, default=[])
         q = f2.text_input("Search student name")
         D = S.copy()
         if bands:
@@ -726,7 +743,7 @@ def phase1(S, insights, pass_mark):
                    "short", "priority", "pattern_short", "milestone"]].rename(columns={
             "roll": "Roll", "name": "Student", "total": "Total /70", "pct": "Total %", "rank": "Rank",
             "written_pct": "Written %", "cycle_pct": "Cycle %", "gap": "Gap (pts)", "marks_lost": "Marks lost",
-            "short": "Band", "priority": "Priority", "pattern_short": "Format pattern", "milestone": "Next milestone"}),
+            "short": "Marks category", "priority": "Priority", "pattern_short": "Format pattern", "milestone": "Next milestone"}),
             hide_index=True,
             column_config={"Total %": st.column_config.ProgressColumn(min_value=0, max_value=100, format="%.1f"),
                            "Written %": st.column_config.NumberColumn(format="%.1f"),
@@ -746,20 +763,23 @@ def phase2(S):
         st.warning("🧪 **Demo mode** — the weekly results and interventions below are *simulated* and are not saved to disk. "
                    "Switch demo mode off in the sidebar to work with your real records.", icon="🧪")
     elif W.empty and I.empty:
-        st.info("No Phase-2 records yet. Start in **Interventions → Auto-assign**, then enter results in "
+        st.info("No follow-up records yet. Start in **Learning Improvement Plan → Auto-assign**, then enter results in "
                 "**Weekly Assessments**. Want to explore first? Turn on *Demo mode* in the sidebar.")
 
-    tabs = st.tabs(["✅ Overview", "📝 Learning Progress", "🛠 Interventions", "🧠 Concept Mastery",
-                    "📈 Before & After", "🧑‍🎓 Student Progress", "📄 Reports"])
+    tabs = st.tabs(["✅ Home – Class Overview", "📝 Student Progress", "🛠 Learning Improvement Plan",
+                    "🔎 Areas for Improvement", "📈 Change in Marks", "🧑‍🎓 Track Student Progress",
+                    "📄 Reports & Downloads"])
 
     # ---------- Objective tracker ----------
     with tabs[0]:
+        st.markdown("#### Future progress")
+        st.caption("These results are collected after the existing marks above. Improvement is measured only after follow-up assessments.")
         st.markdown('<div class="objective">🎯 <b>Key objective:</b> every student has an <b>identified learning need</b>, '
                     'an <b>assigned improvement activity</b>, and <b>measurable evidence of progress</b>.</div>',
                     unsafe_allow_html=True)
         met = int(P["objective_met"].sum())
         c = st.columns(4)
-        with c[0]: kpi("1 · Learning need identified", f"{int(P['need_ok'].sum())}/{n}", "from Phase 1 band + format signal", "#0f766e")
+        with c[0]: kpi("1 · Learning need identified", f"{int(P['need_ok'].sum())}/{n}", "from marks category + format signal", "#0f766e")
         with c[1]: kpi("2 · Activity assigned", f"{int(P['has_activity'].sum())}/{n}", f"{n - int(P['has_activity'].sum())} still unassigned",
                        "#0f766e" if P["has_activity"].all() else "#d97706")
         with c[2]: kpi("3 · Evidence (≥ 2 weeks)", f"{int(P['evidence_ok'].sum())}/{n}", "students with measurable trend",
@@ -767,7 +787,7 @@ def phase2(S):
         with c[3]: kpi("Objective met", f"{met}/{n}", f"{met / n * 100:.0f}% of the class", "#16a34a" if met == n else "#2563eb")
         st.progress(met / n)
 
-        st.markdown("##### Progress status")
+        st.markdown("##### Student progress status")
         ls = P["loop"].value_counts().reset_index()
         ls.columns = ["Status", "Students"]
         a, b = st.columns([2, 3])
@@ -784,7 +804,7 @@ def phase2(S):
             if att.empty:
                 st.success("Every student has a need, an activity and positive evidence. 🎉")
             else:
-                show_df(att[["name", "short", "loop"]].rename(columns={"name": "Student", "short": "Band", "loop": "Why"}),
+                show_df(att[["name", "short", "loop"]].rename(columns={"name": "Student", "short": "Marks category", "loop": "Why"}),
                         hide_index=True, height=250)
 
         st.markdown("##### Student-by-student")
@@ -792,7 +812,7 @@ def phase2(S):
         T = P if not f else P[P["loop"].isin(f)]
         tbl = T[["roll", "name", "short", "need", "activity", "support_format", "status", "sessions_done",
                  "sessions_planned", "n_weeks", "baseline", "latest", "target", "change", "loop"]].rename(columns={
-            "roll": "Roll", "name": "Student", "short": "Band", "need": "Learning need", "activity": "Assigned activity",
+            "roll": "Roll", "name": "Student", "short": "Marks category", "need": "Learning need", "activity": "Assigned activity",
             "support_format": "Support", "status": "Activity status", "sessions_done": "Sessions done",
             "sessions_planned": "Sessions planned", "n_weeks": "Weeks of evidence", "baseline": "Baseline %",
             "latest": "Latest %", "target": "Target %", "change": "Change (pts)", "loop": "Loop status"})
@@ -820,7 +840,7 @@ def phase2(S):
             fig.update_layout(title="Class average by week", xaxis_title="Week", yaxis_title="Average %",
                               yaxis_range=[0, 100])
             show_fig(fig, height=300)
-        st.markdown("#### Enter a week's results")
+        st.markdown("#### Enter follow-up assessment results")
         with st.form("weekly_form"):
             nxt = int(W["week"].max()) + 1 if len(W) else 1
             c = st.columns(5)
@@ -886,7 +906,7 @@ def phase2(S):
             add = pd.DataFrame([make_intervention_row(S[S["roll"] == r].iloc[0]) for r in un["roll"]])
             save_table("interventions", pd.concat([I, add], ignore_index=True))
             st.rerun()
-        st.caption("Recommended activity comes from the student's band (Phase 1). Edit any cell — owner, format, status, "
+        st.caption("Recommended activity comes from the student's marks category. Edit any cell — owner, format, status, "
                    "sessions done, target — then save. Use the + row to add a second activity if needed.")
         lab = dict(zip(S["roll"], S["label"]))
         rev = {v: k for k, v in lab.items()}
@@ -950,7 +970,7 @@ def phase2(S):
                 fig.update_xaxes(tickangle=-40, tickfont=dict(size=9))
                 show_fig(fig, height=520)
 
-            st.markdown("##### 🔁 Re-teach list — concepts where students are 'Not yet' (< 50%)")
+            st.markdown("##### 🔁 Areas needing more practice — concepts where students are 'Not yet' (< 50%)")
             rt = []
             for cname in piv.columns:
                 low = piv[cname][piv[cname] < 50].index
@@ -1014,11 +1034,11 @@ def phase2(S):
                     show_fig(fig, height=300)
                     st.caption("Indicative only — groups are small and not randomly chosen.")
 
-            st.markdown("##### Band movement")
+            st.markdown("##### Change in marks category")
             mv = B[["name", "short", "baseline", "band_after", "latest", "moved"]].copy()
             mv["Movement"] = mv["moved"].map(lambda m: "⬆️ Up" if m > 0 else "⬇️ Down" if m < 0 else "➡️ Same")
-            show_df(mv.drop(columns="moved").rename(columns={"name": "Student", "short": "Band before", "baseline": "Before %",
-                                                            "band_after": "Band now", "latest": "Now %"}).sort_values("Before %"),
+            show_df(mv.drop(columns="moved").rename(columns={"name": "Student", "short": "Marks category before", "baseline": "Before %",
+                                                            "band_after": "Marks category now", "latest": "Now %"}).sort_values("Before %"),
                     hide_index=True, column_config={"Before %": st.column_config.NumberColumn(format="%.1f"),
                                                     "Now %": st.column_config.NumberColumn(format="%.1f")})
             with st.expander("⚠️ How to read this fairly"):
@@ -1044,11 +1064,11 @@ def phase2(S):
         st.markdown(f"### {r['name']} &nbsp; {chip(r['short'], r['color'])} &nbsp; "
                     f"{chip(pr['loop'], STATUS_COLOR.get(pr['loop'], '#6b7280'))}", unsafe_allow_html=True)
         c = st.columns(4)
-        with c[0]: card("1 · Learning need", r["need"], "#0f766e")
+        with c[0]:         card("1 · Learning need", r["need"], "#0f766e")
         with c[1]:
             card("2 · Assigned activity", (f"<b>{pr['activity']}</b><br>{pr['support_format']} · {pr['status']} · "
                                            f"{int(pr['sessions_done'])}/{int(pr['sessions_planned'])} sessions")
-                 if pr["has_activity"] else "⚠️ Not assigned yet — go to Interventions.", "#2563eb" if pr["has_activity"] else "#dc2626")
+                 if pr["has_activity"] else "⚠️ Not assigned yet — go to Learning Improvement Plan.", "#2563eb" if pr["has_activity"] else "#dc2626")
         with c[2]:
             card("3 · Evidence of progress", f"{pr['n_weeks']} week(s) of data · baseline {pct(pr['baseline'], 0)} → "
                                              f"latest {pct(pr['latest'], 0)} (target {pct(pr['target'], 0)})", "#7c3aed")
@@ -1098,7 +1118,7 @@ def phase2(S):
                 ("Student", student["name"]),
                 ("Roll number", int(student["roll"])),
                 ("Baseline", pct(student["baseline"], 1)),
-                ("Performance band", student["short"]),
+                ("Marks category", student["short"]),
                 ("Learning need", student["need"]),
                 ("Assigned activity", progress["activity"] if progress["has_activity"] else "Not assigned"),
                 ("Responsible teacher", progress["owner"] if progress["has_activity"] else "Not assigned"),
@@ -1142,8 +1162,16 @@ def main():
 
     with st.sidebar:
         st.header("Navigation")
-        phase = st.radio("Dashboard", ["Phase 1 · Performance & Personalized Learning",
-                                       "Phase 2 · Continuous Learning Improvement"], label_visibility="collapsed")
+        phase = st.radio("Dashboard", ["Home – Class Overview", "Track Student Progress"],
+                         label_visibility="collapsed")
+        with st.expander("How to use this dashboard"):
+            st.markdown(
+                "1. Start with **Home – Class Overview** to understand the class results.\n"
+                "2. Open **Student Performance** to review one student's marks and learning need.\n"
+                "3. Use **Areas for Improvement** to identify where students need more practice.\n"
+                "4. Create a **Learning Improvement Plan** and record follow-up assessments.\n"
+                "5. Use **Track Student Progress** only after new assessments are entered."
+            )
         st.divider()
         st.subheader("Data")
         wb = find_workbook()
@@ -1174,7 +1202,7 @@ def main():
         for k in ("demo_weekly", "demo_interventions"):
             st.session_state.pop(k, None)
 
-    if phase.startswith("Phase 1"):
+    if phase == "Home – Class Overview":
         phase1(S, insights, pass_mark)
     else:
         phase2(S)
