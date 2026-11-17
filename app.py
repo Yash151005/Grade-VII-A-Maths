@@ -126,9 +126,9 @@ ACT = {
 }
 
 STATUS_COLOR = {
-    "Target met": "#0f766e", "Improving": "#16a34a",
-    "Flat — adjust activity": "#d97706", "Declining — review": "#dc2626",
-    "Evidence building (1 week)": "#2563eb", "No evidence yet": "#ea580c",
+    "Target met": "#0f766e", "Improving": "#3f8f6b",
+    "Flat — adjust activity": "#b7791f", "Declining — review": "#b42318",
+    "Evidence building (1 week)": "#356b82", "No evidence yet": "#c05621",
     "No activity assigned": "#991b1b",
 }
 
@@ -138,32 +138,35 @@ STATUS_COLOR = {
 st.markdown(
     """
 <style>
-.block-container{padding-top:1.4rem;max-width:1400px}
-.hero{background:linear-gradient(120deg,#1e3a8a 0%,#2563eb 60%,#0ea5e9 100%);color:#fff;
-      padding:20px 26px;border-radius:14px;margin-bottom:14px}
+.block-container{padding-top:1.6rem;max-width:1400px}
+body{font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+h1,h2,h3,h4,h5,h6{color:#17324d}
+.hero{background:#17324d;color:#fff;padding:20px 26px;border-radius:10px;margin-bottom:18px}
 .hero h1{margin:0;font-size:1.65rem;color:#fff}
-.hero p{margin:4px 0 0 0;opacity:.92;font-size:.95rem}
-.kpi{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:12px 16px;
-     box-shadow:0 1px 2px rgba(0,0,0,.04);height:100%}
-.kpi .l{font-size:.70rem;color:#6b7280;text-transform:uppercase;letter-spacing:.05em;font-weight:600}
-.kpi .v{font-size:1.65rem;font-weight:700;line-height:1.25;color:#111827}
-.kpi .s{font-size:.76rem;color:#6b7280}
+.hero p{margin:5px 0 0 0;opacity:.88;font-size:.95rem}
+.kpi{background:#fff;border:1px solid #dce5e7;border-radius:8px;padding:14px 16px;
+     box-shadow:0 1px 2px rgba(23,50,77,.05);height:100%}
+.kpi .l{font-size:.70rem;color:#607586;text-transform:uppercase;letter-spacing:.05em;font-weight:600}
+.kpi .v{font-size:1.65rem;font-weight:700;line-height:1.25;color:#17324d}
+.kpi .s{font-size:.76rem;color:#607586}
 .chip{display:inline-block;padding:2px 11px;border-radius:999px;color:#fff;font-size:.8rem;font-weight:600}
-.card{background:#fff;border:1px solid #e5e7eb;border-left:5px solid #2563eb;border-radius:10px;
-      padding:12px 16px;margin-bottom:10px;color:#1f2937}
-.card h4{margin:0 0 4px 0;font-size:.86rem;color:#374151;text-transform:uppercase;letter-spacing:.04em}
+.card{background:#fff;border:1px solid #dce5e7;border-left:4px solid #0f766e;border-radius:8px;
+      padding:14px 16px;margin-bottom:10px;color:#28445b}
+.card h4{margin:0 0 4px 0;font-size:.86rem;color:#17324d;text-transform:uppercase;letter-spacing:.04em}
 .card p{margin:0;font-size:.93rem;line-height:1.5}
-.step{background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:8px 12px;margin-bottom:6px;
-      color:#1f2937;font-size:.92rem}
-.objective{background:#ecfdf5;border:1px solid #6ee7b7;border-radius:12px;padding:14px 18px;color:#064e3b;
+.step{background:#f7f9fa;border:1px solid #dce5e7;border-radius:7px;padding:9px 12px;margin-bottom:6px;
+      color:#28445b;font-size:.92rem}
+.objective{background:#edf7f5;border:1px solid #9ed5ca;border-radius:8px;padding:14px 18px;color:#155e59;
       font-size:1.02rem;margin-bottom:12px}
+section[data-testid="stSidebar"]{background:#f1f5f5;border-right:1px solid #dce5e7}
+div[data-testid="stMetric"]{background:#fff;border:1px solid #dce5e7;border-radius:8px;padding:10px}
 </style>
 """,
     unsafe_allow_html=True,
 )
 
 
-def kpi(label, value, sub="", color="#111827"):
+def kpi(label, value, sub="", color="#17324d"):
     st.markdown(
         f'<div class="kpi"><div class="l">{label}</div>'
         f'<div class="v" style="color:{color}">{value}</div><div class="s">{sub}</div></div>',
@@ -175,7 +178,7 @@ def chip(text, color):
     return f'<span class="chip" style="background:{color}">{text}</span>'
 
 
-def card(title, text, color="#2563eb"):
+def card(title, text, color="#0f766e"):
     st.markdown(
         f'<div class="card" style="border-left-color:{color}"><h4>{title}</h4><p>{text}</p></div>',
         unsafe_allow_html=True,
@@ -197,7 +200,10 @@ def show_df(df, **kw):
 def show_fig(fig, height=360, **kw):
     fig.update_layout(
         template="plotly_white", height=height, margin=dict(l=10, r=10, t=45, b=10),
-        font=dict(size=12), legend=dict(orientation="h", y=-0.2),
+        font=dict(size=12, color="#17324d"),
+        colorway=["#0f766e", "#17324d", "#b7791f", "#3f8f6b", "#356b82"],
+        paper_bgcolor="#ffffff", plot_bgcolor="#ffffff",
+        legend=dict(orientation="h", y=-0.2),
     )
     try:
         st.plotly_chart(fig, width="stretch", **kw)
