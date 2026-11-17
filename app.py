@@ -39,12 +39,15 @@ DATA_DIR.mkdir(exist_ok=True)
 FILES = {
     "weekly": DATA_DIR / "weekly_assessments.csv",
     "interventions": DATA_DIR / "interventions.csv",
+    "diagnostics": DATA_DIR / "diagnostics.csv",
 }
 SCHEMA = {
     "weekly": ["roll", "week", "date", "assessment", "concept", "score", "max_score"],
     "interventions": ["roll", "activity", "addon", "support_format", "owner", "start_date",
                       "target_date", "sessions_planned", "sessions_done", "status",
                       "target_pct", "notes"],
+    "diagnostics": ["roll", "verification_status", "verified_gap", "verified_by",
+                    "verified_date", "notes"],
 }
 
 # Edit this list to match your syllabus plan — it drives the concept-mastery view.
@@ -320,7 +323,7 @@ def coerce(name, df):
         df = df.dropna(subset=["score"])
         df["assessment"] = df["assessment"].fillna("Weekly Quiz").astype(str)
         df["concept"] = df["concept"].fillna("").astype(str)
-    else:
+    elif name == "interventions":
         for c in ["start_date", "target_date"]:
             df[c] = pd.to_datetime(df[c], errors="coerce")
         for c in ["sessions_planned", "sessions_done"]:
@@ -329,6 +332,11 @@ def coerce(name, df):
         for c in ["activity", "addon", "support_format", "owner", "status", "notes"]:
             df[c] = df[c].fillna("").astype(str)
         df["status"] = df["status"].replace("", "Assigned")
+    else:
+        df["verified_date"] = pd.to_datetime(df["verified_date"], errors="coerce")
+        for c in ["verification_status", "verified_gap", "verified_by", "notes"]:
+            df[c] = df[c].fillna("").astype(str)
+        df["verification_status"] = df["verification_status"].replace("", "Not reviewed")
     return df.reset_index(drop=True)
 
 
@@ -433,10 +441,11 @@ def build_progress(S, W, I):
     if len(I):
         li = I.sort_values("start_date").groupby("roll").tail(1)
         P = P.merge(li[["roll", "activity", "addon", "support_format", "owner", "status",
-                        "sessions_planned", "sessions_done", "target_pct", "start_date"]], on="roll", how="left")
+                        "sessions_planned", "sessions_done", "target_pct", "start_date", "target_date"]],
+                    on="roll", how="left")
     else:
         for c in ["activity", "addon", "support_format", "owner", "status", "sessions_planned",
-                  "sessions_done", "target_pct", "start_date"]:
+                  "sessions_done", "target_pct", "start_date", "target_date"]:
             P[c] = np.nan
     P["has_activity"] = P["activity"].notna() & (P["activity"].astype(str) != "")
     P["target"] = P["target_pct"].fillna(P["target_default"])
@@ -469,10 +478,12 @@ def build_progress(S, W, I):
 # ──────────────────────────────────────────────────────────────────────────────
 def phase1(S, insights, pass_mark):
     C = S[S["complete"]]
+    I = load_table("interventions")
     n_all, n_c = len(S), len(C)
     passed = int((C["pct"] >= pass_mark - 1e-9).sum())
 
-    t1, t2, t3, t4, t5 = st.tabs(["📊 Class Analysis", "🧑‍🎓 Student Profile", "🎯 Learning Activities",
+    D = load_table("diagnostics")
+    t1, t2, t3, t4, t5 = st.tabs(["📊 Overview", "🧑‍🎓 Student Profiles", "🎯 Personalized Plans",
                                   "💡 Class Insights", "📋 Data Table"])
 
     # ---------- Class analysis ----------
@@ -526,12 +537,28 @@ def phase1(S, insights, pass_mark):
 
         a, b = st.columns([3, 2])
         with a:
-            R = C.sort_values("pct", ascending=False)
-            fig = px.bar(R, x="name", y="pct", color="short", color_discrete_map=BAND_COLOR,
-                         labels={"pct": "Total %", "name": "", "short": "Band"}, title="Every student, ranked")
-            fig.add_hline(y=pass_mark, line_dash="dash", line_color="#dc2626", annotation_text=f"pass {pass_mark}%")
-            fig.update_xaxes(tickangle=-60, tickfont=dict(size=9))
-            show_fig(fig, height=420)
+            st.markdown("#### Teacher action required")
+            today = pd.Timestamp(date.today())
+            overdue = I[(I["target_date"].notna()) & (I["target_date"] < today) &
+                        (~I["status"].isin(["Completed"]))] if len(I) else pd.DataFrame()
+            pending = S[~S["complete"]]
+            follow_up = S[S["short"].isin(["Critical", "Conceptual Gaps", "Foundational Cracks"])]
+            actions = []
+            for _, row in follow_up.iterrows():
+                actions.append({"Student": row["name"], "Action": "Review learning need and assign support",
+                                "Priority": row["priority"]})
+            for _, row in pending.iterrows():
+                actions.append({"Student": row["name"], "Action": "Schedule pending assessment / make-up",
+                                "Priority": "Assessment pending"})
+            if len(overdue):
+                labels = dict(zip(S["roll"], S["name"]))
+                for _, row in overdue.iterrows():
+                    actions.append({"Student": labels.get(row["roll"], f"Roll {row['roll']}"),
+                                    "Action": f"Overdue intervention: {row['activity']}", "Priority": "Overdue"})
+            if actions:
+                show_df(pd.DataFrame(actions).drop_duplicates(), hide_index=True, height=260)
+            else:
+                st.success("No urgent follow-up, pending assessments, or overdue interventions.")
         with b:
             pat = S["pattern_short"].value_counts().reset_index()
             pat.columns = ["Pattern", "Students"]
@@ -543,7 +570,16 @@ def phase1(S, insights, pass_mark):
 
     # ---------- Student profile ----------
     with t2:
-        sel = st.selectbox("Select a student", S["label"].tolist(), key="p1_student")
+        query = st.text_input("Search by roll number or name", key="p1_search",
+                              placeholder="e.g. 12 or Priya")
+        options = S["label"].tolist()
+        if query.strip():
+            q = query.strip().lower()
+            options = S[S["label"].str.lower().str.contains(q, regex=False)]["label"].tolist()
+        if not options:
+            st.warning("No student matches that search.")
+            return
+        sel = st.selectbox("Open student profile", options, key="p1_student")
         r = S[S["label"] == sel].iloc[0]
         st.markdown(f"### {r['name']}  &nbsp; {chip(r['short'], r['color'])} &nbsp; "
                     f"<span style='color:#6b7280;font-size:1rem'>Roll {r['roll']} · Priority: {r['priority']}</span>",
@@ -570,8 +606,44 @@ def phase1(S, insights, pass_mark):
         with b:
             card("Score snapshot", r["snapshot"], r["color"])
             card("Diagnostic signal", r["diagnostic"], "#2563eb")
-            card("Likely mindset signal", r["mindset"], "#7c3aed")
             card("Format pattern insight", r["format_insight"], "#0891b2")
+
+        st.markdown("#### Diagnostic verification")
+        st.caption("The workbook signal is a suspected learning gap. Only a teacher can verify or revise it.")
+        existing = D[D["roll"] == r["roll"]].tail(1)
+        current = existing.iloc[0] if len(existing) else None
+        with st.form(f"diagnostic_form_{r['roll']}"):
+            dc1, dc2 = st.columns(2)
+            with dc1:
+                st.text_area("Suspected gap (from workbook)", str(r["diagnostic"]), disabled=True)
+                verification = st.selectbox(
+                    "Verification status",
+                    ["Not reviewed", "Teacher verified", "Teacher revised", "Not observed"],
+                    index=["Not reviewed", "Teacher verified", "Teacher revised", "Not observed"].index(
+                        current["verification_status"] if current is not None and current["verification_status"] in
+                        ["Not reviewed", "Teacher verified", "Teacher revised", "Not observed"] else "Not reviewed"),
+                )
+                verified_gap = st.text_input("Teacher-verified weakness / need",
+                                              "" if current is None else str(current["verified_gap"]))
+            with dc2:
+                verified_by = st.text_input("Verified by", "" if current is None else str(current["verified_by"]))
+                verified_date = st.date_input(
+                    "Verification date",
+                    date.today() if current is None or pd.isna(current["verified_date"])
+                    else current["verified_date"].date(),
+                )
+                diagnostic_notes = st.text_area("Observation notes",
+                                                "" if current is None else str(current["notes"]))
+            save_diagnostic = st.form_submit_button("Save diagnostic review", type="primary")
+        if save_diagnostic:
+            row = pd.DataFrame([{
+                "roll": r["roll"], "verification_status": verification, "verified_gap": verified_gap,
+                "verified_by": verified_by, "verified_date": pd.Timestamp(verified_date),
+                "notes": diagnostic_notes,
+            }])
+            save_table("diagnostics", pd.concat([D[D["roll"] != r["roll"]], row], ignore_index=True))
+            st.success("Diagnostic review saved.")
+            st.rerun()
 
         st.markdown("#### 🧭 Personalized learning path")
         steps = [re.sub(r"^\d\)\s*", "", s).strip() for s in re.split(r"\s*(?=\d\)\s)", str(r["path"])) if s.strip()]
@@ -658,6 +730,7 @@ def phase1(S, insights, pass_mark):
 # ──────────────────────────────────────────────────────────────────────────────
 def phase2(S):
     W, I = load_table("weekly"), load_table("interventions")
+    D = load_table("diagnostics")
     P = build_progress(S, W, I)
     n = len(P)
 
@@ -668,8 +741,8 @@ def phase2(S):
         st.info("No Phase-2 records yet. Start in **Interventions → Auto-assign**, then enter results in "
                 "**Weekly Assessments**. Want to explore first? Turn on *Demo mode* in the sidebar.")
 
-    tabs = st.tabs(["✅ Objective Tracker", "📝 Weekly Assessments", "🛠 Interventions", "🧠 Concept Mastery",
-                    "📈 Before & After", "🧑‍🎓 Student Progress"])
+    tabs = st.tabs(["✅ Overview", "📝 Learning Progress", "🛠 Interventions", "🧠 Concept Mastery",
+                    "📈 Before & After", "🧑‍🎓 Student Progress", "📄 Reports"])
 
     # ---------- Objective tracker ----------
     with tabs[0]:
@@ -948,7 +1021,16 @@ def phase2(S):
 
     # ---------- Student progress ----------
     with tabs[5]:
-        sel = st.selectbox("Select a student", S["label"].tolist(), key="p2_student")
+        query = st.text_input("Search by roll number or name", key="p2_search",
+                              placeholder="e.g. 12 or Priya")
+        options = S["label"].tolist()
+        if query.strip():
+            q = query.strip().lower()
+            options = S[S["label"].str.lower().str.contains(q, regex=False)]["label"].tolist()
+        if not options:
+            st.warning("No student matches that search.")
+            return
+        sel = st.selectbox("Select a student", options, key="p2_student")
         r = S[S["label"] == sel].iloc[0]
         pr = P[P["roll"] == r["roll"]].iloc[0]
         st.markdown(f"### {r['name']} &nbsp; {chip(r['short'], r['color'])} &nbsp; "
@@ -985,6 +1067,57 @@ def phase2(S):
                             column_config={"Latest %": st.column_config.ProgressColumn(min_value=0, max_value=100, format="%.0f")})
         else:
             st.info("No weekly results recorded for this student yet.")
+
+    # ---------- Reports ----------
+    with tabs[6]:
+        st.markdown("Generate a private, student-wise improvement report for sharing with the teacher or parent.")
+        query = st.text_input("Search report student by roll number or name", key="report_search",
+                              placeholder="e.g. 12 or Priya")
+        options = S["label"].tolist()
+        if query.strip():
+            q = query.strip().lower()
+            options = S[S["label"].str.lower().str.contains(q, regex=False)]["label"].tolist()
+        if not options:
+            st.warning("No student matches that search.")
+        else:
+            report_sel = st.selectbox("Student", options, key="report_student")
+            student = S[S["label"] == report_sel].iloc[0]
+            progress = P[P["roll"] == student["roll"]].iloc[0]
+            diagnostic = D[D["roll"] == student["roll"]].tail(1)
+            student_weekly = with_pct(W[W["roll"] == student["roll"]]) if len(W) else pd.DataFrame()
+            report_rows = [
+                ("Student", student["name"]),
+                ("Roll number", int(student["roll"])),
+                ("Baseline", pct(student["baseline"], 1)),
+                ("Performance band", student["short"]),
+                ("Learning need", student["need"]),
+                ("Assigned activity", progress["activity"] if progress["has_activity"] else "Not assigned"),
+                ("Responsible teacher", progress["owner"] if progress["has_activity"] else "Not assigned"),
+                ("Activity status", progress["status"] if progress["has_activity"] else "Not assigned"),
+                ("Target date", str(progress["target_date"].date()) if progress["has_activity"] and pd.notna(progress["target_date"])
+                 else "Not set"),
+                ("Latest progress", pct(progress["latest"], 1)),
+                ("Change from baseline", pct(progress["change"], 1)),
+                ("Diagnostic verification", diagnostic.iloc[0]["verification_status"] if len(diagnostic) else "Not reviewed"),
+                ("Teacher-verified weakness", diagnostic.iloc[0]["verified_gap"] if len(diagnostic) else ""),
+            ]
+            report = pd.DataFrame(report_rows, columns=["Measure", "Value"])
+            show_df(report, hide_index=True)
+            if len(student_weekly):
+                st.markdown("##### Weekly assessment record")
+                show_df(student_weekly[["week", "date", "assessment", "concept", "score", "max_score", "pct"]],
+                        hide_index=True)
+                report = pd.concat([
+                    report,
+                    student_weekly[["week", "date", "assessment", "concept", "score", "max_score", "pct"]]
+                    .rename(columns={"week": "Measure", "date": "Value"})
+                ], ignore_index=True)
+            st.download_button(
+                "⬇️ Download private student report (CSV)",
+                report.to_csv(index=False).encode("utf-8"),
+                f"student_report_{int(student['roll'])}.csv",
+                "text/csv",
+            )
 
 
 # ──────────────────────────────────────────────────────────────────────────────
