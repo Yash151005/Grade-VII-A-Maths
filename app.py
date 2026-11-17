@@ -1113,6 +1113,7 @@ def phase2(S):
                  if diagnostic_record is not None else ""),
             ]
             report = pd.DataFrame(report_rows, columns=["Measure", "Value"])
+            report["Value"] = report["Value"].fillna("").astype(str)
             show_df(report, hide_index=True)
             if len(student_weekly):
                 st.markdown("##### Weekly assessment record")
