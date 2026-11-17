@@ -492,7 +492,7 @@ def phase1(S, insights, pass_mark):
     D = load_table("diagnostics")
     t1, t2, t3, t4, t5 = st.tabs(["🏠 Home – Class Overview", "🧑‍🎓 Student Performance",
                                   "🎯 Learning Improvement Plan", "🔎 Areas for Improvement",
-                                  "📄 Reports & Downloads"])
+                                  "📄 Reports"])
 
     # ---------- Class analysis ----------
     with t1:
@@ -714,11 +714,24 @@ def phase1(S, insights, pass_mark):
             show_df(pd.DataFrame(pairs), hide_index=True)
             st.caption("Suggestion only — match on personality and seating. Explainers gain depth by teaching.")
 
-        plan = S[["roll", "name", "short", "priority", "need", "activity", "addon", "target_pct"]].rename(columns={
-            "short": "band", "need": "learning_need", "activity": "improvement_activity",
-            "addon": "format_addon", "target_pct": "target_%"})
-        st.download_button("⬇️ Download learning improvement plan (CSV)", plan.to_csv(index=False).encode("utf-8"),
-                           "class_action_plan.csv", "text/csv")
+        st.markdown("#### Interactive class improvement plan")
+        pc1, pc2 = st.columns(2)
+        plan_bands = pc1.multiselect("Show marks categories", BAND_ORDER_ALL, default=[], key="plan_bands")
+        plan_search = pc2.text_input("Find a student in the plan", key="plan_search")
+        plan = S[["roll", "name", "short", "priority", "need", "activity", "addon", "target_pct"]].copy()
+        if plan_bands:
+            plan = plan[plan["short"].isin(plan_bands)]
+        if plan_search:
+            plan = plan[plan["name"].str.contains(plan_search, case=False, na=False)]
+        plan = plan.rename(columns={
+            "roll": "Roll", "name": "Student", "short": "Marks category", "priority": "Priority",
+            "need": "Learning need", "activity": "Improvement activity", "addon": "Extra practice",
+            "target_pct": "Target %"})
+        show_df(plan, hide_index=True, column_config={
+            "Learning need": st.column_config.TextColumn(width="large"),
+            "Improvement activity": st.column_config.TextColumn(width="large"),
+            "Extra practice": st.column_config.TextColumn(width="large"),
+            "Target %": st.column_config.NumberColumn(format="%.0f")})
 
     # ---------- Insights ----------
     with t4:
@@ -767,8 +780,8 @@ def phase2(S):
                 "**Weekly Assessments**. Want to explore first? Turn on *Demo mode* in the sidebar.")
 
     tabs = st.tabs(["✅ Home – Class Overview", "📝 Student Progress", "🛠 Learning Improvement Plan",
-                    "🔎 Areas for Improvement", "📈 Change in Marks", "🧑‍🎓 Track Student Progress",
-                    "📄 Reports & Downloads"])
+                    "🔎 Areas for Improvement",                     "📈 Change in Marks", "🧑‍🎓 Track Student Progress",
+                    "📄 Reports"])
 
     # ---------- Objective tracker ----------
     with tabs[0]:
@@ -824,8 +837,7 @@ def phase2(S):
             "Change (pts)": st.column_config.NumberColumn(format="%+.1f"),
             "Learning need": st.column_config.TextColumn(width="large"),
             "Assigned activity": st.column_config.TextColumn(width="large")})
-        st.download_button("⬇️ Download tracker (CSV)", tbl.to_csv(index=False).encode("utf-8"),
-                           "objective_tracker.csv", "text/csv")
+        st.caption("Use the filters above to explore the tracker by current student progress status.")
 
     # ---------- Weekly assessments ----------
     with tabs[1]:
@@ -1134,22 +1146,28 @@ def phase2(S):
             ]
             report = pd.DataFrame(report_rows, columns=["Measure", "Value"])
             report["Value"] = report["Value"].fillna("").astype(str)
+            st.markdown("#### Student summary")
+            rc = st.columns(4)
+            with rc[0]:
+                kpi("Marks category", student["short"], "current result", student["color"])
+            with rc[1]:
+                kpi("Baseline", pct(student["baseline"], 0), "existing result")
+            with rc[2]:
+                kpi("Latest progress", pct(progress["latest"], 0), "follow-up assessments", "#2563eb")
+            with rc[3]:
+                kpi("Change in marks", pct(progress["change"], 0), "from baseline",
+                    "#16a34a" if pd.notna(progress["change"]) and progress["change"] >= 0 else "#dc2626")
             show_df(report, hide_index=True)
             if len(student_weekly):
                 st.markdown("##### Weekly assessment record")
+                weekly_chart = student_weekly.groupby("week", as_index=False)["pct"].mean()
+                fig = px.line(weekly_chart, x="week", y="pct", markers=True,
+                              title="Student progress over time",
+                              labels={"week": "Assessment week", "pct": "Marks %"})
+                fig.update_layout(yaxis_range=[0, 100])
+                show_fig(fig, height=280)
                 show_df(student_weekly[["week", "date", "assessment", "concept", "score", "max_score", "pct"]],
                         hide_index=True)
-                report = pd.concat([
-                    report,
-                    student_weekly[["week", "date", "assessment", "concept", "score", "max_score", "pct"]]
-                    .rename(columns={"week": "Measure", "date": "Value"})
-                ], ignore_index=True)
-            st.download_button(
-                "⬇️ Download private student report (CSV)",
-                report.to_csv(index=False).encode("utf-8"),
-                f"student_report_{int(student['roll'])}.csv",
-                "text/csv",
-            )
 
 
 # ──────────────────────────────────────────────────────────────────────────────
