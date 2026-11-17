@@ -727,6 +727,24 @@ def phase1(S, insights, pass_mark):
             "roll": "Roll", "name": "Student", "short": "Marks category", "priority": "Priority",
             "need": "Learning need", "activity": "Improvement activity", "addon": "Extra practice",
             "target_pct": "Target %"})
+        if not plan.empty:
+            graph_data = (plan["Marks category"].value_counts()
+                          .reindex(BAND_ORDER_ALL, fill_value=0)
+                          .rename_axis("Marks category")
+                          .reset_index(name="Students"))
+            fig = px.bar(
+                graph_data[graph_data["Students"] > 0],
+                x="Marks category",
+                y="Students",
+                color="Marks category",
+                color_discrete_map=BAND_COLOR,
+                text="Students",
+                title="Students by marks category",
+                hover_data={"Students": True},
+            )
+            fig.update_layout(showlegend=False, xaxis_title=None, yaxis_title="Students")
+            show_fig(fig, height=330)
+            chart_note("Use the filters above to explore how many students need practice or immediate support.")
         show_df(plan, hide_index=True, column_config={
             "Learning need": st.column_config.TextColumn(width="large"),
             "Improvement activity": st.column_config.TextColumn(width="large"),
