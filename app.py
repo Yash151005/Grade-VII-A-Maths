@@ -342,7 +342,10 @@ def coerce(name, df):
 
 def load_table(name):
     if st.session_state.get("demo"):
-        return coerce(name, st.session_state[f"demo_{name}"])
+        key = f"demo_{name}"
+        if key not in st.session_state:
+            return coerce(name, pd.DataFrame(columns=SCHEMA[name]))
+        return coerce(name, st.session_state[key])
     p = FILES[name]
     df = pd.read_csv(p) if p.exists() else pd.DataFrame(columns=SCHEMA[name])
     return coerce(name, df)
